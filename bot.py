@@ -1,10 +1,13 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import random
+import os
+import threading
+import time
 
 # ========== НАСТРОЙКИ ==========
-TOKEN = "8308705769:AAHTqHOohmjfquFXPcWYdqXSB0F2J1UeZpg"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
-ADMIN_ID = 5310441458  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID (узнайте у @userinfobot)
+TOKEN = "8652785746:AAHW7CufljQULtzWv4MyOdY9Mpkmqgqlghg"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
+ADMIN_ID = 5310441458  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID
 # ================================
 
 bot = telebot.TeleBot(TOKEN)
@@ -85,34 +88,31 @@ LINKS = [
     "https://vacban.wtf/?vacinvite=WTF-z8h4Aead912qtN7iVacJoCccdf4BpRcb520a"
 ]
 
-# Хранилище в памяти (без файлов!)
-# Структура: { user_id: {"link": "ссылка", "valid": True/False} }
-user_links = {}
+# Хранилище в памяти
+user_links = {}  # { user_id: {"link": "ссылка", "valid": True/False} }
+users_db = set()  # Множество для хранения всех пользователей, кто написал боту
+
+# ========== ФУНКЦИИ БОТА ==========
 
 def get_random_unused_link(user_id):
     """Выдаёт случайную неиспользованную ссылку пользователю"""
     global user_links
     
-    # Проверяем, есть ли у пользователя уже активная ссылка
     if str(user_id) in user_links and user_links[str(user_id)].get("valid", False):
         return None, "❌ У вас уже есть активная ссылка! Сначала нажмите 'Сделать недействительной'."
     
-    # Собираем все ссылки, которые уже были использованы (активны у других пользователей)
     used_links = []
     for uid, data in user_links.items():
         if data.get("valid", False):
             used_links.append(data["link"])
     
-    # Находим доступные ссылки (которые ещё никому не выданы)
     available_links = [link for link in LINKS if link not in used_links]
     
     if not available_links:
         return None, "❌ Все ссылки закончились! Обратитесь к администратору."
     
-    # Выбираем случайную ссылку из доступных
     selected_link = random.choice(available_links)
     
-    # Сохраняем ссылку за пользователем
     user_links[str(user_id)] = {
         "link": selected_link,
         "valid": True
@@ -129,20 +129,40 @@ def invalidate_link(user_id):
         return True
     return False
 
-def get_user_link(user_id):
-    """Возвращает текущую ссылку пользователя, если есть"""
-    global user_links
+def broadcast_message(admin_id, message_text):
+    """Отправляет сообщение всем пользователям"""
+    success_count = 0
+    fail_count = 0
     
-    if str(user_id) in user_links and user_links[str(user_id)].get("valid", False):
-        return user_links[str(user_id)]["link"]
-    return None
+    for user_id in users_db:
+        try:
+            bot.send_message(int(user_id), message_text)
+            success_count += 1
+            time.sleep(0.05)  # Небольшая задержка, чтобы не превысить лимиты Telegram
+        except Exception as e:
+            fail_count += 1
+            print(f"Не удалось отправить пользователю {user_id}: {e}")
+    
+    # Отправляем отчет админу
+    bot.send_message(
+        admin_id,
+        f"📊 Отчёт о рассылке:\n\n"
+        f"✅ Успешно отправлено: {success_count}\n"
+        f"❌ Не доставлено: {fail_count}\n"
+        f"👥 Всего пользователей: {len(users_db)}"
+    )
+
+# ========== КОМАНДЫ БОТА ==========
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    # Добавляем пользователя в базу
+    users_db.add(str(message.chat.id))
+    
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton("✔ РАБОТАЕТ", callback_data="get_link"),
-        InlineKeyboardButton("❌ НЕ РАБОЧАЯ", callback_data="invalidate")
+        InlineKeyboardButton("🔗 Рабочая", callback_data="get_link"),
+        InlineKeyboardButton("❌ Не рабочая", callback_data="invalidate")
     )
     
     user_name = message.from_user.first_name or "Пользователь"
@@ -155,9 +175,9 @@ def start(message):
         f"• При нажатии на кнопку выдаю инвайт доступ к форуму vacban.wtf\n"
         f"• Можешь получть ссылку для себя и друзей\n"
         f"• ОБРАЩАЙТЕ ВНИМАНИЕ НА ПОСЛЕДНИЙ АПДЕЙТ ИНВАЙТОВ И СКОЛЬКО ДОСТУПНО\n"
-        f"• Последнее обновление бота/инвайтов :07.05.2026\n\n"
+        f"• Последнее обновление бота/инвайтов :08.05.2026\n\n"
         f"⚠️ Если ссылка не действительна то нажмите НЕ РАБОЧАЯ\n\n"
-        f"👉 Нажмите кнопку ниже, чтобы получить случайную ссылку:",
+        f"👉 Нажмите кнопку ниже, чтобы получить случайную ссылку:"
         reply_markup=markup
     )
 
@@ -173,14 +193,12 @@ def handle_buttons(call):
             bot.answer_callback_query(call.id, error, show_alert=True)
             return
         
-        # Показываем ссылку пользователю
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
             InlineKeyboardButton("📋 СКОПИРОВАТЬ ССЫЛКУ", callback_data="copy"),
             InlineKeyboardButton("❌ СДЕЛАТЬ НЕДЕЙСТВИТЕЛЬНОЙ", callback_data="invalidate")
         )
         
-        # Подсчитываем оставшиеся ссылки
         used_links = []
         for uid, data in user_links.items():
             if data.get("valid", False):
@@ -188,10 +206,10 @@ def handle_buttons(call):
         remaining = len(LINKS) - len(used_links)
         
         bot.edit_message_text(
-            f"✅ {user_name}, ВАША СЛУЧАЙНАЯ ССЫЛКА:\n\n"
+            f"✅ {user_name}, ВАШ ИНВАЙТ :\n\n"
             f"🔗 `{link}`\n\n"
             f"📌 Используйте ее\n"
-            f"📊 Осталось свободных ссылок: {remaining}\n\n"
+            f"📊 Осталось свободных инвайтов: {remaining}\n\n"
             f"💡 Нажмите на ссылку, чтобы выделить, затем скопируйте.",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -199,11 +217,10 @@ def handle_buttons(call):
             reply_markup=markup
         )
         
-        # Уведомление админу
         try:
             bot.send_message(
                 ADMIN_ID,
-                f"📢 Выдана ссылка!\n\n👤 Пользователь: {user_name}\n🆔 ID: {user_id}\n🔗 Ссылка: {link[:80]}...\n📊 Осталось: {remaining}"
+                f"📢 Выдана ссылка!\n\n👤 Пользователь: {user_name}\n🆔 ID: {user_id}\n📊 Осталось: {remaining}"
             )
         except:
             pass
@@ -214,18 +231,15 @@ def handle_buttons(call):
             markup.add(InlineKeyboardButton("🔗 ПОЛУЧИТЬ НОВУЮ ССЫЛКУ", callback_data="get_link"))
             
             bot.edit_message_text(
-                f"⚠️ {user_name}, ваша ссылка АННУЛИРОВАНА!\n\n"
-                f"❌ Эта ссылка больше НЕ РАБОТАЕТ.\n\n"
-                f"🔁 Вы можете получить НОВУЮ случайную ссылку, нажав на кнопку ниже.\n\n"
-                f"💡 Помните: каждая ссылка выдается только одному пользователю!",
+                f"✅ {user_name}, ваша ссылка АННУЛИРОВАНА!\n\n"
+                f"🔁 Вы можете получить НОВУЮ случайную ссылку, нажав на кнопку ниже.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=markup
             )
             
-            # Уведомление админу
             try:
-                bot.send_message(ADMIN_ID, f"⚠️ Пользователь {user_name} (ID: {user_id}) аннулировал свою ссылку")
+                bot.send_message(ADMIN_ID, f"⚠️ Пользователь {user_name} (ID: {user_id}) аннулировал ссылку и может получить новую")
             except:
                 pass
         else:
@@ -233,6 +247,97 @@ def handle_buttons(call):
     
     elif call.data == "copy":
         bot.answer_callback_query(call.id, "📋 Нажмите и удерживайте ссылку, чтобы скопировать", show_alert=False)
+
+# ========== НОВАЯ КОМАНДА /ads ДЛЯ РАССЫЛКИ ==========
+
+@bot.message_handler(commands=['ads'])
+def ads_command(message):
+    """Команда для массовой рассылки (только для админа)"""
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "⛔ Доступ запрещён. Эта команда только для администратора.")
+        return
+    
+    # Проверяем, есть ли текст после команды
+    text = message.text.replace('/ads', '').strip()
+    
+    if not text:
+        bot.send_message(
+            message.chat.id,
+            "📢 *Как сделать рассылку:*\n\n"
+            "Напишите команду и текст сообщения:\n"
+            "`/ads Ваше рекламное сообщение здесь`\n\n"
+            "📌 *Пример:*\n"
+            "`/ads Внимание! У нас новые реферальные ссылки!`\n\n"
+            f"👥 *Всего пользователей:* {len(users_db)}\n\n"
+            "⚠️ Рассылку нельзя отменить. Убедитесь, что сообщение готово!",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Подтверждение перед отправкой
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ ДА, ОТПРАВИТЬ", callback_data=f"confirm_ads_{message.message_id}"),
+        InlineKeyboardButton("❌ ОТМЕНА", callback_data="cancel_ads")
+    )
+    
+    # Сохраняем текст рассылки во временную переменную (через атрибут бота)
+    bot.temp_ads_text = text
+    bot.temp_ads_msg_id = message.message_id
+    
+    bot.send_message(
+        message.chat.id,
+        f"📢 *ПОДТВЕРЖДЕНИЕ РАССЫЛКИ*\n\n"
+        f"📝 Текст сообщения:\n"
+        f"`{text[:200]}{'...' if len(text) > 200 else ''}`\n\n"
+        f"👥 Будет отправлено: {len(users_db)} пользователям\n\n"
+        f"⚠️ Это действие нельзя отменить!\n\n"
+        f"Отправить?",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_ads_') or call.data == 'cancel_ads')
+def handle_ads_confirmation(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⛔ Доступ запрещён!", show_alert=True)
+        return
+    
+    if call.data == 'cancel_ads':
+        bot.edit_message_text(
+            "❌ Рассылка отменена.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        bot.answer_callback_query(call.id, "Рассылка отменена")
+        return
+    
+    if call.data.startswith('confirm_ads_'):
+        # Получаем текст рассылки
+        ads_text = getattr(bot, 'temp_ads_text', None)
+        
+        if not ads_text:
+            bot.edit_message_text(
+                "❌ Ошибка: текст рассылки не найден. Попробуйте снова.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            bot.answer_callback_query(call.id, "Ошибка!")
+            return
+        
+        # Уведомляем о начале рассылки
+        bot.edit_message_text(
+            f"📢 Начинаю рассылку...\n\n👥 Всего пользователей: {len(users_db)}\n⏳ Пожалуйста, подождите...",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        
+        bot.answer_callback_query(call.id, "Рассылка начата!")
+        
+        # Запускаем рассылку в отдельном потоке, чтобы не блокировать бота
+        threading.Thread(target=broadcast_message, args=(call.from_user.id, ads_text)).start()
+
+# ========== ОСТАЛЬНЫЕ КОМАНДЫ АДМИНА ==========
 
 @bot.message_handler(commands=['stats'])
 def stats(message):
@@ -245,27 +350,22 @@ def stats(message):
     
     total_links = len(LINKS)
     active_users = len(user_links)
-    
-    # Считаем активные ссылки (valid = True)
     active_links = sum(1 for data in user_links.values() if data.get("valid", False))
     used_links_ids = [data["link"] for data in user_links.values() if data.get("valid", False)]
     used_count = len(used_links_ids)
     
     stats_text = f"📊 СТАТИСТИКА БОТА\n\n"
     stats_text += f"📝 Всего ссылок в базе: {total_links}\n"
-    stats_text += f"👥 Пользователей получили ссылки: {active_users}\n"
+    stats_text += f"👥 Пользователей в боте: {len(users_db)}\n"
     stats_text += f"✅ Активных ссылок выдано: {active_links}\n"
     stats_text += f"📭 Свободных ссылок осталось: {total_links - used_count}\n"
     stats_text += f"🔒 Аннулированных: {active_users - active_links}\n\n"
     
-    # Список активных ссылок
     if active_links > 0:
-        stats_text += "🆔 Активные ссылки (пользователь -> ссылка):\n"
+        stats_text += "🆔 Активные ссылки:\n"
         for uid, data in user_links.items():
             if data.get("valid"):
                 stats_text += f"• User {uid}: {data['link'][:50]}...\n"
-    else:
-        stats_text += "Нет активных ссылок."
     
     if len(stats_text) > 4000:
         stats_text = stats_text[:4000] + "..."
@@ -302,20 +402,45 @@ def reset_all(message):
     user_links = {}
     bot.send_message(message.chat.id, "✅ ВСЕ ДАННЫЕ СБРОШЕНЫ! Все ссылки снова доступны.")
 
+@bot.message_handler(commands=['users'])
+def list_users(message):
+    """Список всех пользователей бота (только админ)"""
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "⛔ Доступ запрещён.")
+        return
+    
+    if not users_db:
+        bot.send_message(message.chat.id, "📭 Нет пользователей в базе.")
+        return
+    
+    users_list = list(users_db)
+    text = f"👥 СПИСОК ПОЛЬЗОВАТЕЛЕЙ ({len(users_db)}):\n\n"
+    
+    for i, uid in enumerate(users_list, 1):
+        text += f"{i}. `{uid}`\n"
+        if len(text) > 3500:
+            text += "\n⚠️ Список слишком длинный, показаны не все..."
+            break
+    
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
 @bot.message_handler(commands=['help'])
 def help_command(message):
     help_text = (
         "🤖 *Команды бота:*\n\n"
-        "/start - Начать работу\n"
-        "/stats - Статистика (только админ)\n"
-        "/reset_user [ID] - Сбросить ссылку пользователя (админ)\n"
-        "/reset_all - Полный сброс всех данных (админ)\n\n"
+        "👤 *Для всех:*\n"
+        "/start - Начать работу\n\n"
+        "👑 *Админ-команды:*\n"
+        "/stats - Статистика\n"
+        "/users - Список всех пользователей\n"
+        "/ads [текст] - Массовая рассылка\n"
+        "/reset_user [ID] - Сбросить ссылку пользователя\n"
+        "/reset_all - Полный сброс всех данных\n\n"
         "*Как пользоваться:*\n"
         "1️⃣ Нажмите 'Получить случайную ссылку'\n"
         "2️⃣ Бот выдаст РАНДОМНУЮ ссылку из списка\n"
         "3️⃣ Эта ссылка больше НИКОМУ не выдастся\n"
-        "4️⃣ Скопируйте и используйте ссылку\n"
-        "5️⃣ Если ссылка не подходит - аннулируйте её и получите новую\n\n"
+        "4️⃣ Если ссылка не подходит - аннулируйте её и получите новую\n\n"
         "⚠️ Каждая ссылка выдается ТОЛЬКО ОДНОМУ пользователю!"
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
@@ -326,13 +451,10 @@ print("🤖 БОТ ЗАПУЩЕН!")
 print("=" * 50)
 print(f"📊 Всего загружено ссылок: {len(LINKS)}")
 print(f"👨‍💻 Админ ID: {ADMIN_ID}")
+print(f"👥 База пользователей: {len(users_db)}")
 print("=" * 50)
 print("✅ Бот готов к работе!")
-print("📌 Особенности:")
-print("   • Ссылки выдаются РАНДОМНО")
-print("   • Каждая ссылка выдается ТОЛЬКО ОДНОМУ пользователю")
-print("   • После аннулирования можно получить НОВУЮ ссылку")
-print("   • Данные хранятся в памяти (при перезапуске всё сбрасывается)")
+print("📌 Команда /ads [текст] - для массовой рассылки")
 print("=" * 50)
 print("Нажмите Ctrl+C для остановки")
 print("=" * 50)
