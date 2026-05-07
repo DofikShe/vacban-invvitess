@@ -5,8 +5,8 @@ import threading
 import time
 
 # ========== ПРОСТО ВСТАВЬТЕ ВАШ ТОКЕН СЮДА ==========
-TOKEN = "8123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
-ADMIN_ID = 123456789  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID
+TOKEN = "8652785746:AAHW7CufljQULtzWv4MyOdY9Mpkmqgqlghg"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
+ADMIN_ID = 5310441458  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID
 # ====================================================
 
 bot = telebot.TeleBot(TOKEN)
