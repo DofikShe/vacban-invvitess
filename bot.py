@@ -6,8 +6,8 @@ import threading
 import time
 
 # ========== НАСТРОЙКИ ==========
-TOKEN = "8652785746:AAHW7CufljQULtzWv4MyOdY9Mpkmqgqlghg"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
-ADMIN_ID = 5310441458  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID
+TOKEN = "ВАШ_ТОКЕН_ОТ_BOTFATHER"  # ← ЗАМЕНИТЕ НА ВАШ ТОКЕН!
+ADMIN_ID = 123456789  # ← ЗАМЕНИТЕ НА ВАШ TELEGRAM ID
 # ================================
 
 bot = telebot.TeleBot(TOKEN)
@@ -161,8 +161,8 @@ def start(message):
     
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton("🔗 Рабочая", callback_data="get_link"),
-        InlineKeyboardButton("❌ Не рабочая", callback_data="invalidate")
+        InlineKeyboardButton("🔗 ПОЛУЧИТЬ СЛУЧАЙНУЮ ССЫЛКУ", callback_data="get_link"),
+        InlineKeyboardButton("❌ СДЕЛАТЬ ССЫЛКУ НЕДЕЙСТВИТЕЛЬНОЙ", callback_data="invalidate")
     )
     
     user_name = message.from_user.first_name or "Пользователь"
@@ -172,12 +172,11 @@ def start(message):
         f"👋 Привет, {user_name}!\n\n"
         f"🤖 Я бот для выдачи реферальных ссылок VACBAN\n\n"
         f"📋 Как я работаю:\n"
-        f"• При нажатии на кнопку выдаю инвайт доступ к форуму vacban.wtf\n"
-        f"• Можешь получть ссылку для себя и друзей\n"
-        f"• ОБРАЩАЙТЕ ВНИМАНИЕ НА ПОСЛЕДНИЙ АПДЕЙТ ИНВАЙТОВ И СКОЛЬКО ДОСТУПНО\n"
-        f"• Последнее обновление бота/инвайтов :08.05.2026\n\n"
-        f"⚠️ Если ссылка не действительна то нажмите НЕ РАБОЧАЯ\n\n"
-        f"👉 Нажмите кнопку ниже, чтобы получить случайную ссылку:"
+        f"• При нажатии на кнопку выдаю СЛУЧАЙНУЮ ссылку\n"
+        f"• Каждая ссылка выдается ТОЛЬКО ОДНОМУ пользователю\n"
+        f"• После выдачи ссылка удаляется из общего списка\n"
+        f"• Если нажмете 'Сделать недействительной' — сможете получить НОВУЮ ссылку\n\n"
+        f"👉 Нажмите кнопку ниже, чтобы получить случайную ссылку:",
         reply_markup=markup
     )
 
@@ -206,10 +205,11 @@ def handle_buttons(call):
         remaining = len(LINKS) - len(used_links)
         
         bot.edit_message_text(
-            f"✅ {user_name}, ВАШ ИНВАЙТ :\n\n"
+            f"✅ {user_name}, ВАША СЛУЧАЙНАЯ ССЫЛКА:\n\n"
             f"🔗 `{link}`\n\n"
-            f"📌 Используйте ее\n"
-            f"📊 Осталось свободных инвайтов: {remaining}\n\n"
+            f"📌 Эта ссылка закреплена ТОЛЬКО за вами!\n"
+            f"📊 Осталось свободных ссылок: {remaining}\n\n"
+            f"⚠️ Если ссылка не подойдёт — нажмите 'Сделать недействительной' и получите НОВУЮ!\n\n"
             f"💡 Нажмите на ссылку, чтобы выделить, затем скопируйте.",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
